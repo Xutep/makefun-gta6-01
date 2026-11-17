@@ -1,0 +1,137 @@
+// Marisol City — tuning constants, colours and mission data.
+// All original work for make.fun gta6-01. No external assets.
+
+export const CFG = {
+  worldW: 3200,
+  worldH: 2400,
+  roadW: 72,
+  // on-foot movement (px/s)
+  walkSpeed: 175,
+  runSpeed: 268,
+  // car physics
+  carAccel: 360,
+  carBrake: 560,
+  carMax: 430,
+  carMaxReverse: 170,
+  sportsMax: 545,
+  policeMax: 475,
+  truckMax: 340,
+  steerRate: 2.6,
+  drag: 0.55,
+  handbrakeDrag: 2.6,
+  // combat
+  pistolDamage: 34,
+  punchDamage: 18,
+  punchRange: 46,
+  bulletSpeed: 900,
+  maxAmmo: 60,
+  startAmmo: 24,
+  // wanted / heat
+  heatPerStar: 20,
+  maxWanted: 5,
+  heatDecay: 1.6,
+  heatDecayHidden: 6,
+  // misc
+  pedCount: 26,
+  trafficCount: 15,
+  parkedCount: 10,
+  pickupCount: 8,
+  interactRange: 70,
+  startCash: 120,
+  startHealth: 100,
+};
+
+export const COLORS = {
+  grass: '#5da24a',
+  grassDark: '#4c8a3d',
+  sand: '#e8d29a',
+  water: '#2f7fb8',
+  waterDeep: '#256b9e',
+  road: '#3a3d42',
+  roadEdge: '#2c2e33',
+  lane: '#e8d44d',
+  sidewalk: '#b9b3a4',
+  crosswalk: '#e8e6df',
+  park: '#3f8f3a',
+  pond: '#4aa3d8',
+  buildingRoof: ['#c96f4a', '#7d8aa0', '#a08a5f', '#8a6f8f', '#5f7d6a', '#b0523c'],
+  downtownGlass: ['#4d7ea8', '#5d8fb8', '#3f6d94', '#6d9ec4'],
+  warehouse: ['#9a8a7a', '#7a6a5a', '#8a7a6a'],
+  tree: '#2f7a2e',
+  treeTrunk: '#6a4a2a',
+  palm: '#3d9a4a',
+  player: '#ff7a1a',
+  playerDark: '#c85a08',
+  pedShirt: ['#e84a5f', '#4a7de8', '#e8c84a', '#7de84a', '#b04ae8', '#e8e8e8'],
+  carPaint: ['#c23b2e', '#2e6dc2', '#e8b73a', '#3aa655', '#8a5fc2', '#d8d8d8', '#222831', '#e87a2e'],
+  sportsPaint: ['#e01e2b', '#ffd21a', '#1ae0c8', '#ff6ad5'],
+  policeWhite: '#f2f2f2',
+  policeBlack: '#1c1e24',
+  taxiYellow: '#f2c200',
+  hudBg: 'rgba(8, 12, 20, 0.72)',
+  hudText: '#f5f2e8',
+  hudAccent: '#ffd21a',
+  star: '#ffd21a',
+  starEmpty: '#5a5a5a',
+  waypoint: '#ffd21a',
+  dialogBg: 'rgba(10, 14, 24, 0.88)',
+};
+
+export const MISSIONS = [
+  {
+    id: 1,
+    name: 'First Fare',
+    reward: 250,
+    brief: 'A client is waiting downtown. Pick them up and drive them across town before the meter runs out.',
+    dialog: [
+      ['Jax', 'Marisol City. Sun, sea, and everybody owes somebody. Time to earn.'],
+      ['Client', 'You the driver? I need to get to the harbour district. Fast.'],
+      ['Jax', 'Buckle up. First fare of the day.'],
+    ],
+    complete: ['Client', 'Right on time. Keep the change, driver. You are alright.'],
+  },
+  {
+    id: 2,
+    name: 'Hot Wheels',
+    reward: 400,
+    brief: 'A cherry-red sports car is parked uptown. "Borrow" it and bring it to Rico\'s garage.',
+    dialog: [
+      ['Rico', 'Jax, I need that red Comet parked uptown. No questions, no scratches.'],
+      ['Jax', 'Stealing cars before lunch. Just another Tuesday in Marisol.'],
+    ],
+    complete: ['Rico', 'Clean as a whistle. The garage owes you one, Jax.'],
+  },
+  {
+    id: 3,
+    name: 'The Pickup',
+    reward: 500,
+    brief: 'Collect 3 packages around the city. Stay cool — if your wanted level passes 2 stars, the deal is off.',
+    dialog: [
+      ['Mara', 'Three packages, three corners of the city. Cops are jumpy today. Keep it quiet.'],
+      ['Jax', 'Quiet is my middle name. Mostly.'],
+    ],
+    complete: ['Mara', 'All three, no heat. You are a ghost, Jax.'],
+  },
+  {
+    id: 4,
+    name: 'Heat Rising',
+    reward: 650,
+    brief: 'The whole force is on you — 3 stars. Survive the chase for 60 seconds, then drop the package at the pier.',
+    dialog: [
+      ['Rico', 'They made you, Jax! Whole precinct is rolling. Lose them or outrun them!'],
+      ['Jax', 'Then let us give them a show they will never forget.'],
+    ],
+    complete: ['Rico', 'You shook the whole city and still made the drop. Legend.'],
+  },
+  {
+    id: 5,
+    name: 'The Big Score',
+    reward: 1000,
+    brief: 'The finale: hit three stops across Marisol under 4-star heat, then vanish to the hideout.',
+    dialog: [
+      ['Mara', 'This is it, Jax. Three stops, every cop in Marisol on your tail, then disappear.'],
+      ['Jax', 'One last job. Then Marisol is mine.'],
+    ],
+    complete: ['Mara', 'The Big Score is ours. Marisol City belongs to you now, Jax.'],
+  },
+];
