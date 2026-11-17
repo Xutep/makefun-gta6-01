@@ -1,6 +1,5 @@
 // Marisol City — localStorage save: missions completed, cash, best wanted
-// survived, settings. Never throws (private mode, disabled storage).
-
+// survived, settings. All access is guarded (private mode / headless).
 const KEY = 'marisol-city-save-v1';
 
 export function loadSave() {
@@ -8,24 +7,28 @@ export function loadSave() {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (typeof data !== 'object' || data === null) return null;
+    if (typeof data !== 'object' || !data) return null;
     return data;
   } catch {
     return null;
   }
 }
 
-export function writeSave(G) {
+export function writeSave(game) {
   try {
     const data = {
-      missionsDone: G.missions.done,
-      cash: Math.floor(G.player.cash),
-      bestWanted: G.stats.bestWanted,
-      muted: G.muted,
-      savedAt: G.clockMinutes,
+      missionsDone: game.missionsDone,
+      cash: game.cash,
+      bestWanted: game.bestWanted,
+      muted: game.audio.muted,
+      savedAt: game.clock,
     };
     window.localStorage.setItem(KEY, JSON.stringify(data));
-  } catch {
-    // storage unavailable — the game still plays fine
-  }
+  } catch { /* storage unavailable */ }
+}
+
+export function clearSave() {
+  try {
+    window.localStorage.removeItem(KEY);
+  } catch { /* ignore */ }
 }

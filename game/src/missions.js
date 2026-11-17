@@ -1,245 +1,254 @@
-// Marisol City — story missions: 5 sequential jobs with dialog, waypoints,
-// timers and fail conditions. After the last one the city is free roam.
+// Marisol City — story: 5 sequential missions with dialog, waypoints,
+// objectives and cash rewards. Free roam after the finale.
+import { MISSION_REWARDS } from './config.js';
+import { dist } from './random.js';
+import { makeCar } from './vehicles.js';
 
-import { MISSIONS } from './config.js';
-import { dist } from './world.js';
-import { wantedLevel } from './police.js';
+export const MISSION_DEFS = [
+  {
+    id: 1, name: 'First Fare',
+    brief: 'Pick up the client at the north plaza and drive them downtown before the meter runs out.',
+    dialog: [
+      'Jax: Another day, another fare. Marisol City never sleeps.',
+      'Client: Take me downtown, driver. And step on it — I am late for a meeting.',
+    ],
+    reward: MISSION_REWARDS[0],
+  },
+  {
+    id: 2, name: 'Hot Wheels',
+    brief: 'Steal the marked sports car and bring it to the garage on the east side.',
+    dialog: [
+      'Rosa: A cherry-red Comet is parked by the marina. Bring it to my garage, no scratches.',
+      'Jax: Stealing cars before lunch. Business as usual.',
+    ],
+    reward: MISSION_REWARDS[1],
+  },
+  {
+    id: 3, name: 'The Pickup',
+    brief: 'Collect 3 packages around the city. Keep your wanted level at 2 stars or below.',
+    dialog: [
+      'Rosa: Three packages, three corners of the city. Stay cool — the cops are watching.',
+      'Jax: Quiet run. I can do quiet.',
+    ],
+    reward: MISSION_REWARDS[2],
+  },
+  {
+    id: 4, name: 'Heat Rising',
+    brief: 'Survive a 3-star chase, then deliver the package to the hideout.',
+    dialog: [
+      'Rosa: The job went loud. Lose the heat, then bring the package to the hideout.',
+      'Jax: Three stars and counting. Time to disappear.',
+    ],
+    reward: MISSION_REWARDS[3],
+  },
+  {
+    id: 5, name: 'The Big Score',
+    brief: 'Hit three stops under 4-star heat, then escape to the hideout. The whole city is watching.',
+    dialog: [
+      'Rosa: One last job, Jax. Three stops, the whole city on alert. Make it count.',
+      'Jax: Marisol City, this is the big score.',
+    ],
+    reward: MISSION_REWARDS[4],
+  },
+];
 
-export function createMissions() {
+export function createMissionState(game) {
   return {
-    index: 0, // current mission (0-based)
-    done: 0, // missions completed
-    steps: [],
-    step: 0,
+    index: 0,
+    stage: 'intro',
+    timer: 0,
     waypoint: null,
-    objective: '',
-    timer: null,
-    heatLock: false,
-    surviveT: 0,
-    dialogQueue: [],
-    dialog: null,
-    dialogT: 0,
-    freeRoam: false,
+    collected: 0,
+    stops: [],
+    dialogLine: 0,
+    dialogTimer: 0,
+    done: false,
   };
 }
 
-function setObjective(G, text) {
-  G.missions.objective = text;
+function setWaypoint(game, x, y, label) {
+  game.mission.waypoint = { x, y, label };
 }
 
-function setWaypoint(G, x, y, label) {
-  G.missions.waypoint = { x, y, label };
-}
-
-function queueDialog(G, lines) {
-  for (const [speaker, text] of lines) G.missions.dialogQueue.push({ speaker, text });
-}
-
-function startStep(G) {
-  const M = G.missions;
-  const step = M.steps[M.step];
-  if (!step) return;
-  if (step.kind === 'goto' || step.kind === 'collect' || step.kind === 'deliver') {
-    setWaypoint(G, step.x, step.y, step.label);
-    setObjective(G, step.label);
-  } else if (step.kind === 'survive') {
-    M.surviveT = step.seconds;
-    M.timer = step.seconds;
-    setObjective(G, `Survive the chase — ${step.seconds}s`);
-    setWaypoint(G, G.player.x, G.player.y, 'Survive!');
-  } else if (step.kind === 'board') {
-    setWaypoint(G, step.x, step.y, step.label);
-    setObjective(G, step.label);
+export function startMission(game) {
+  const m = game.mission;
+  const def = MISSION_DEFS[m.index];
+  if (!def) { m.done = true; return; }
+  m.stage = 'active';
+  m.collected = 0;
+  m.dialogLine = 0;
+  m.dialogTimer = 5;
+  game.showDialog(def.dialog[0]);
+  game.audio.sfx('mission');
+  const s = game.world.spawns;
+  if (def.id === 1) {
+    m.timer = 90;
+    setWaypoint(game, s.client.x, s.client.y, 'Pick up the client');
+  } else if (def.id === 2) {
+    m.timer = 120;
+    const car = makeCar(s.sportsCar.x, s.sportsCar.y, 0, '#d23b3b', 'sports', true);
+    car.civilianOwned = false;
+    car.missionCar = true;
+    game.cars.push(car);
+    game.missionCar = car;
+    setWaypoint(game, s.sportsCar.x, s.sportsCar.y, 'Steal the sports car');
+  } else if (def.id === 3) {
+    m.timer = 180;
+    m.stops = [
+      { x: 700, y: 500, done: false },
+      { x: 2500, y: 1900, done: false },
+      { x: 2800, y: 600, done: false },
+    ];
+    setWaypoint(game, m.stops[0].x, m.stops[0].y, 'Package 1 of 3');
+  } else if (def.id === 4) {
+    m.timer = 150;
+    game.addWanted(3, 'the job went loud');
+    setWaypoint(game, s.hideout.x, s.hideout.y, 'Lose the heat, reach the hideout');
+  } else if (def.id === 5) {
+    m.timer = 240;
+    m.stops = [
+      { x: 420, y: 1740, done: false },
+      { x: 2420, y: 360, done: false },
+      { x: 3060, y: 1500, done: false },
+    ];
+    game.addWanted(2, 'the big score is on');
+    setWaypoint(game, m.stops[0].x, m.stops[0].y, 'Stop 1 of 3');
   }
 }
 
-export function startMission(G, idx) {
-  const M = G.missions;
-  const L = G.world.landmarks;
-  M.index = idx;
-  M.step = 0;
-  M.timer = null;
-  M.heatLock = false;
-  const def = MISSIONS[idx];
-  queueDialog(G, def.dialog);
-
-  if (idx === 0) {
-    M.steps = [
-      { kind: 'board', x: L.clientSpot.x, y: L.clientSpot.y, label: 'Pick up the client downtown (get in a car)' },
-      { kind: 'deliver', x: L.clientDest.x, y: L.clientDest.y, label: 'Drive the client to the harbour district', time: 150 },
-    ];
-  } else if (idx === 1) {
-    M.steps = [
-      { kind: 'steal', x: L.sportsCarSpot.x, y: L.sportsCarSpot.y, label: 'Steal the red sports car uptown' },
-      { kind: 'deliver', x: L.garage.x, y: L.garage.y, label: 'Bring it to Rico\'s garage' },
-    ];
-  } else if (idx === 2) {
-    M.steps = L.packages.map((pk, i) => ({
-      kind: 'collect', x: pk.x, y: pk.y, label: `Collect package ${i + 1} of 3 (stay under 3 stars)`,
-    }));
-  } else if (idx === 3) {
-    M.steps = [
-      { kind: 'survive', seconds: 60, label: 'Survive the 3-star chase' },
-      { kind: 'deliver', x: L.pierDrop.x, y: L.pierDrop.y, label: 'Drop the package at the pier' },
-    ];
-  } else {
-    M.steps = [
-      ...L.bigScoreStops.map((s, i) => ({
-        kind: 'collect', x: s.x, y: s.y, label: `Hit stop ${i + 1} of 3 — the Big Score`,
-      })),
-      { kind: 'deliver', x: L.hideout.x, y: L.hideout.y, label: 'Escape to the hideout!' },
-    ];
-  }
-  startStep(G);
-}
-
-function completeStep(G) {
-  const M = G.missions;
-  M.step++;
-  if (M.step >= M.steps.length) {
-    completeMission(G);
-  } else {
-    startStep(G);
+export function completeMission(game) {
+  const m = game.mission;
+  const def = MISSION_DEFS[m.index];
+  game.cash += def.reward;
+  game.audio.sfx('cash');
+  game.showToast(`Mission complete: ${def.name} — +$${def.reward}`);
+  game.missionsDone += 1;
+  m.index += 1;
+  m.stage = 'complete';
+  m.completeTimer = 3.5;
+  game.missionCar = null;
+  if (m.index >= MISSION_DEFS.length) {
+    m.done = true;
+    game.showDialog('Rosa: That is the whole score, Jax. Marisol City is yours now — free roam.');
   }
 }
 
-function completeMission(G) {
-  const M = G.missions;
-  const def = MISSIONS[M.index];
-  G.player.cash += def.reward;
-  M.done++;
-  G.audio.missionDone();
-  G.audio.cash();
-  queueDialog(G, def.complete);
-  G.toast = `MISSION COMPLETE — ${def.name}  +$${def.reward}`;
-  G.toastT = 4;
-  M.heatLock = false;
-  if (M.index === 3) {
-    // heat from mission 4 cools off fast once it is done
-    G.player.heat = Math.min(G.player.heat, 20);
-  }
-  if (M.index >= MISSIONS.length - 1) {
-    M.freeRoam = true;
-    M.objective = 'Free roam — Marisol City is yours. All 5 missions complete!';
-    M.waypoint = null;
-    G.state = 'complete';
+function playerPos(game) {
+  const p = game.player;
+  return p.inCar ? { x: p.inCar.x, y: p.inCar.y } : { x: p.x, y: p.y };
+}
+
+export function updateMissions(game, dt) {
+  const m = game.mission;
+  if (m.done) return;
+  if (m.stage === 'intro') {
+    startMission(game);
     return;
   }
-  startMission(G, M.index + 1);
-}
-
-function failMission(G, reason) {
-  const M = G.missions;
-  G.toast = `MISSION FAILED — ${reason}`;
-  G.toastT = 4;
-  G.audio.busted();
-  // restart the same mission from its first step
-  startMission(G, M.index);
-}
-
-export function updateMissions(G, dt) {
-  const M = G.missions;
-  const p = G.player;
-
-  // dialog: one line at a time, 5s each or E to skip
-  if (!M.dialog && M.dialogQueue.length > 0) {
-    M.dialog = M.dialogQueue.shift();
-    M.dialogT = 5;
-  }
-  if (M.dialog) {
-    M.dialogT -= dt;
-    if (M.dialogT <= 0 || G.input.pressed.has('e')) {
-      M.dialog = null;
+  if (m.stage === 'complete') {
+    m.completeTimer -= dt;
+    if (m.completeTimer <= 0) {
+      m.stage = 'intro';
+      game.clearDialog();
     }
-  }
-
-  if (M.freeRoam || G.state !== 'play') return;
-  const step = M.steps[M.step];
-  if (!step) return;
-
-  // mission 4 / 5 heat lock: wanted is forced while the mission runs
-  if (M.index === 3 && M.step === 0) {
-    M.heatLock = true;
-    p.heat = Math.max(p.heat, 60); // 3 stars
-  }
-  if (M.index === 4) {
-    M.heatLock = true;
-    p.heat = Math.max(p.heat, 80); // 4 stars
-  }
-
-  // mission 3: too much heat fails the deal
-  if (M.index === 2 && wantedLevel(G) > 2) {
-    failMission(G, 'the deal is off — too much heat');
     return;
   }
-
-  // timers
-  if (step.time && M.timer === null) M.timer = step.time;
-  if (M.timer !== null && (step.kind === 'deliver' || step.kind === 'survive')) {
-    M.timer -= dt;
-    if (step.kind === 'survive') {
-      M.surviveT = M.timer;
-      setObjective(G, `Survive the chase — ${Math.ceil(Math.max(0, M.timer))}s`);
-    } else {
-      setObjective(G, `${step.label} — ${Math.ceil(Math.max(0, M.timer))}s left`);
+  const def = MISSION_DEFS[m.index];
+  m.timer -= dt;
+  if (m.dialogTimer > 0) {
+    m.dialogTimer -= dt;
+    if (m.dialogTimer <= 0 && m.dialogLine + 1 < def.dialog.length) {
+      m.dialogLine += 1;
+      game.showDialog(def.dialog[m.dialogLine]);
+      m.dialogTimer = 5;
     }
-    if (M.timer <= 0) {
-      if (step.kind === 'survive') {
-        M.heatLock = false;
-        p.heat = 40; // heat drops to 2 stars after the chase
-        M.timer = null;
-        completeStep(G);
-      } else {
-        failMission(G, 'out of time');
+  }
+  if (m.timer <= 0) {
+    game.showToast(`Mission failed: ${def.name} — out of time`);
+    m.stage = 'intro';
+    m.timer = 0;
+    if (def.id === 2 && game.missionCar) {
+      const i = game.cars.indexOf(game.missionCar);
+      if (i >= 0) game.cars.splice(i, 1);
+      game.missionCar = null;
+    }
+    return;
+  }
+  const pos = playerPos(game);
+  const s = game.world.spawns;
+  if (def.id === 1) {
+    if (m.stage === 'active' && !m.pickedUp) {
+      if (dist(pos.x, pos.y, s.client.x, s.client.y) < 60) {
+        m.pickedUp = true;
+        game.showDialog('Client: Good, you are here. Downtown, please — fast.');
+        setWaypoint(game, s.downtown.x, s.downtown.y, 'Drop off downtown');
       }
+    } else if (m.pickedUp && dist(pos.x, pos.y, s.downtown.x, s.downtown.y) < 70) {
+      completeMission(game);
+    }
+  } else if (def.id === 2) {
+    const car = game.missionCar;
+    if (car && !m.stolen && game.player.inCar === car) {
+      m.stolen = true;
+      game.showDialog('Jax: Got it. Now get it to Rosa\'s garage in one piece.');
+      setWaypoint(game, s.garage.x, s.garage.y, 'Deliver to the garage');
+    } else if (m.stolen && dist(pos.x, pos.y, s.garage.x, s.garage.y) < 80) {
+      completeMission(game);
+    }
+  } else if (def.id === 3) {
+    if (game.wanted > 2) {
+      game.showToast('Mission failed: wanted level too high');
+      m.stage = 'intro';
       return;
     }
+    const stop = m.stops[m.collected];
+    if (stop && dist(pos.x, pos.y, stop.x, stop.y) < 60) {
+      stop.done = true;
+      m.collected += 1;
+      game.audio.sfx('pickup');
+      game.cash += 100;
+      if (m.collected >= m.stops.length) {
+        completeMission(game);
+      } else {
+        const next = m.stops[m.collected];
+        setWaypoint(game, next.x, next.y, `Package ${m.collected + 1} of 3`);
+      }
+    }
+  } else if (def.id === 4) {
+    if (game.wanted >= 3 && !m.survived) {
+      m.survived = true;
+      game.showDialog('Jax: They are on me. Shake them, then run for the hideout.');
+    }
+    if (m.survived && game.wanted <= 1 && dist(pos.x, pos.y, s.hideout.x, s.hideout.y) < 80) {
+      completeMission(game);
+    }
+  } else if (def.id === 5) {
+    const stop = m.stops[m.collected];
+    if (stop && dist(pos.x, pos.y, stop.x, stop.y) < 70) {
+      stop.done = true;
+      m.collected += 1;
+      game.audio.sfx('pickup');
+      if (m.collected >= m.stops.length) {
+        setWaypoint(game, s.hideout.x, s.hideout.y, 'Escape to the hideout');
+        m.escaping = true;
+      } else {
+        const next = m.stops[m.collected];
+        setWaypoint(game, next.x, next.y, `Stop ${m.collected + 1} of 3`);
+      }
+    } else if (m.escaping && dist(pos.x, pos.y, s.hideout.x, s.hideout.y) < 80) {
+      completeMission(game);
+    }
   }
+}
 
-  const d = dist(p.x, p.y, step.x, step.y);
-  switch (step.kind) {
-    case 'board': {
-      // client boards only when the player arrives in a car
-      if (d < 70) {
-        if (p.car) {
-          G.toast = 'Client aboard — drive!';
-          G.toastT = 2;
-          M.timer = null;
-          completeStep(G);
-        } else {
-          setObjective(G, 'Pick up the client — you need a car first!');
-        }
-      }
-      break;
-    }
-    case 'steal': {
-      if (p.car && p.car === G.missionCar) {
-        completeStep(G);
-      } else if (d < 60) {
-        setObjective(G, 'Press E to steal the red sports car');
-      }
-      break;
-    }
-    case 'collect':
-    case 'deliver': {
-      if (d < 64) {
-        if (step.kind === 'collect') {
-          G.audio.pickup();
-          G.particles.push({
-            x: step.x, y: step.y, vx: 0, vy: -40,
-            life: 0.8, maxLife: 0.8, color: '#ffd21a', size: 6,
-          });
-        }
-        M.timer = null;
-        completeStep(G);
-      }
-      break;
-    }
-    case 'survive': {
-      // handled by the timer above
-      break;
-    }
-    default:
-      break;
-  }
+export function missionObjectiveText(game) {
+  const m = game.mission;
+  if (m.done) return 'Free roam — Marisol City is yours';
+  const def = MISSION_DEFS[m.index];
+  if (!def) return '';
+  const wp = m.waypoint;
+  const pos = playerPos(game);
+  const d = wp ? Math.round(dist(pos.x, pos.y, wp.x, wp.y)) : 0;
+  const time = Math.max(0, Math.ceil(m.timer));
+  return `${def.id}. ${def.name} — ${wp ? wp.label : def.brief} (${d}m · ${time}s)`;
 }

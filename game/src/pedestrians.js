@@ -1,162 +1,76 @@
-// Marisol City — pedestrians: walk the sidewalks, cross at intersections,
-// flee from gunshots and from cars speeding at them. Cops are peds too
-// (kind 'cop'), drawn in navy, and chase the player on foot at high heat.
+// Marisol City — pedestrians: stroll the sidewalks, flee from gunshots,
+// speeding cars and police chases.
+import { WORLD_W, WORLD_H, AVENUES, STREETS } from './config.js';
+import { clamp, dist } from './random.js';
 
-import { COLORS } from './config.js';
-import { addHeat } from './vehicles.js';
-import { hitBuilding, clampToWorld, dist, angleTo, isOnRoad } from './world.js';
+const SHIRTS = ['#e86a6a', '#6a9ae8', '#e8c96a', '#7ed07e', '#c96ad0', '#e8e8e8', '#6ad0c9'];
 
-export function spawnPeds(G) {
-  const rng = G.rng;
-  for (let i = 0; i < 26; i++) {
-    const pt = pickSidewalkSpot(G, rng);
-    G.peds.push({
-      x: pt.x, y: pt.y,
+export function spawnPeds(game, count) {
+  const rng = game.rng;
+  for (let i = 0; i < count; i++) {
+    const vertical = rng.chance(0.5);
+    let x;
+    let y;
+    if (vertical) {
+      x = rng.pick(AVENUES) + (rng.chance(0.5) ? 62 : -62);
+      y = rng.range(80, WORLD_H - 80);
+    } else {
+      x = rng.range(80, WORLD_W - 80);
+      y = rng.pick(STREETS) + (rng.chance(0.5) ? 62 : -62);
+    }
+    game.peds.push({
+      x, y,
       angle: rng.range(0, Math.PI * 2),
-      speed: rng.range(38, 70),
-      shirt: rng.pick(COLORS.pedShirt),
-      kind: 'civilian',
-      fleeing: false,
-      fleeT: 0,
-      wanderT: rng.range(0, 4),
-      targetAngle: rng.range(0, Math.PI * 2),
+      speed: rng.range(45, 80),
+      shirt: rng.pick(SHIRTS),
+      tx: x, ty: y,
+      flee: 0,
+      down: false,
+      downTimer: 0,
     });
   }
 }
 
-function pickSidewalkSpot(G, rng) {
-  // beside a random avenue or street, just off the road
-  if (rng.chance(0.5)) {
-    const ax = rng.pick(G.world.avenues);
-    return { x: ax + (rng.chance(0.5) ? -52 : 52), y: rng.range(240, 2160) };
-  }
-  const sy = rng.pick(G.world.streets);
-  return { x: rng.range(240, 2960), y: sy + (rng.chance(0.5) ? -52 : 52) };
-}
-
-export function spawnCop(G, x, y) {
-  G.peds.push({
-    x, y,
-    angle: 0,
-    speed: 120,
-    shirt: '#1d2f5e',
-    kind: 'cop',
-    fleeing: false,
-    fleeT: 0,
-    wanderT: 0,
-    targetAngle: 0,
-  });
-}
-
-// Peds within range of a gunshot or a speeding car start fleeing.
-export function scarePeds(G, x, y, radius) {
-  for (const ped of G.peds) {
-    if (ped.kind !== 'civilian') continue;
-    if (dist(ped.x, ped.y, x, y) < radius) {
-      ped.fleeing = true;
-      ped.fleeT = 3;
-      ped.targetAngle = angleTo(x, y, ped.x, ped.y) + G.rng.range(-0.5, 0.5);
-    }
+function pickTarget(game, ped) {
+  const rng = game.rng;
+  const vertical = rng.chance(0.5);
+  if (vertical) {
+    ped.tx = rng.pick(AVENUES) + (rng.chance(0.5) ? 62 : -62);
+    ped.ty = rng.range(80, WORLD_H - 80);
+  } else {
+    ped.tx = rng.range(80, WORLD_W - 80);
+    ped.ty = rng.pick(STREETS) + (rng.chance(0.5) ? 62 : -62);
   }
 }
 
-export function updatePeds(G, dt) {
-  const p = G.player;
-  for (const ped of G.peds) {
-    if (ped.kind === 'cop') {
-      // foot cops chase the player when wanted >= 2
-      const wanted = Math.floor(p.heat / 20);
-      if (wanted >= 2 && G.state === 'play') {
-        const a = angleTo(ped.x, ped.y, p.x, p.y);
-        ped.angle = a;
-        ped.x += Math.cos(a) * ped.speed * dt;
-        ped.y += Math.sin(a) * ped.speed * dt;
-        if (dist(ped.x, ped.y, p.x, p.y) < 26 && p.onFoot) {
-          // caught on foot: busted timer builds
-          p.bustedTimer += dt;
-          if (p.bustedTimer > 1.2) {
-            G.state = 'busted';
-            G.audio.busted();
-          }
-        }
-        continue;
-      }
-      // otherwise cops patrol the sidewalk
-      ped.wanderT -= dt;
-      if (ped.wanderT <= 0) {
-        ped.wanderT = G.rng.range(3, 6);
-        ped.targetAngle = G.rng.range(0, Math.PI * 2);
-      }
-      ped.angle = ped.targetAngle;
-      ped.x += Math.cos(ped.angle) * 45 * dt;
-      ped.y += Math.sin(ped.angle) * 45 * dt;
+export function updatePeds(game, dt) {
+  const p = game.player;
+  const px = p.inCar ? p.inCar.x : p.x;
+  const py = p.inCar ? p.inCar.y : p.y;
+  const playerSpeed = p.inCar ? Math.abs(p.inCar.speed) : 0;
+  for (const ped of game.peds) {
+    if (ped.down) {
+      ped.downTimer -= dt;
+      if (ped.downTimer <= 0) ped.down = false;
       continue;
     }
-
-    if (ped.fleeT > 0) {
-      ped.fleeT -= dt;
-      ped.angle = ped.targetAngle;
-      const nx = ped.x + Math.cos(ped.angle) * 150 * dt;
-      const ny = ped.y + Math.sin(ped.angle) * 150 * dt;
-      if (!hitBuilding(G.world, nx, ped.y, 10)) ped.x = nx;
-      if (!hitBuilding(G.world, ped.x, ny, 10)) ped.y = ny;
-      if (ped.fleeT <= 0) ped.fleeing = false;
-    } else {
-      // amble along, changing direction now and then
-      ped.wanderT -= dt;
-      if (ped.wanderT <= 0) {
-        ped.wanderT = G.rng.range(2, 5);
-        ped.targetAngle = G.rng.range(0, Math.PI * 2);
-      }
-      // steer back toward a sidewalk if wandering into a block
-      if (!isOnRoad(G.world, ped.x, ped.y)) {
-        const nearestAv = G.world.avenues.reduce((a, b) =>
-          Math.abs(b - ped.x) < Math.abs(a - ped.x) ? b : a);
-        ped.targetAngle = angleTo(ped.x, ped.y, nearestAv, ped.y);
-      }
-      ped.angle += (ped.targetAngle - ped.angle) * Math.min(1, dt * 3);
-      const nx = ped.x + Math.cos(ped.angle) * ped.speed * dt;
-      const ny = ped.y + Math.sin(ped.angle) * ped.speed * dt;
-      if (!hitBuilding(G.world, nx, ped.y, 10)) ped.x = nx;
-      if (!hitBuilding(G.world, ped.x, ny, 10)) ped.y = ny;
+    // Flee danger: gunfire nearby, a fast car close, or high wanted heat.
+    const dPlayer = dist(ped.x, ped.y, px, py);
+    if ((game.gunshotTimer > 0 && dPlayer < 420) || (playerSpeed > 200 && dPlayer < 150) || (game.wanted >= 3 && dPlayer < 260)) {
+      ped.flee = 2.5;
     }
-    const c = clampToWorld(ped.x, ped.y, 24);
-    ped.x = c.x;
-    ped.y = c.y;
-
-    // a fast car bearing down scares peds
-    if (p.car && Math.abs(p.car.speed) > 240 && dist(ped.x, ped.y, p.x, p.y) < 130) {
-      ped.fleeing = true;
-      ped.fleeT = 2.5;
-      ped.targetAngle = angleTo(p.x, p.y, ped.x, ped.y);
+    if (ped.flee > 0) {
+      ped.flee -= dt;
+      const away = Math.atan2(ped.y - py, ped.x - px);
+      ped.angle = away;
+      ped.x = clamp(ped.x + Math.cos(away) * 150 * dt, 16, WORLD_W - 16);
+      ped.y = clamp(ped.y + Math.sin(away) * 150 * dt, 16, WORLD_H - 16);
+      continue;
     }
+    if (dist(ped.x, ped.y, ped.tx, ped.ty) < 24) pickTarget(game, ped);
+    const a = Math.atan2(ped.ty - ped.y, ped.tx - ped.x);
+    ped.angle = a;
+    ped.x = clamp(ped.x + Math.cos(a) * ped.speed * dt, 16, WORLD_W - 16);
+    ped.y = clamp(ped.y + Math.sin(a) * ped.speed * dt, 16, WORLD_H - 16);
   }
-}
-
-// A car hitting a ped: the ped is knocked down (respawns later) and the
-// player gains heat. Returns true if a ped was hit.
-export function checkPedHits(G) {
-  const p = G.player;
-  if (!p.car || Math.abs(p.car.speed) < 60) return false;
-  let hitAny = false;
-  for (const ped of G.peds) {
-    if (ped.kind !== 'civilian') continue;
-    if (dist(ped.x, ped.y, p.car.x, p.car.y) < 30) {
-      // knock the ped down and fling them aside
-      ped.x += G.rng.range(-40, 40);
-      ped.y += G.rng.range(-40, 40);
-      ped.fleeing = true;
-      ped.fleeT = 4;
-      ped.targetAngle = angleTo(p.car.x, p.car.y, ped.x, ped.y);
-      hitAny = true;
-    }
-  }
-  if (hitAny) {
-    G.audio.crash();
-    // hitting a ped is a crime, and witnesses make it worse
-    let heat = 15;
-    if (G.peds.some((ped) => dist(ped.x, ped.y, p.car.x, p.car.y) < 320)) heat = 25;
-    addHeat(G, heat, 'hit pedestrian');
-  }
-  return hitAny;
 }

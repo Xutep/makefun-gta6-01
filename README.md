@@ -17,6 +17,20 @@ node serve.ts
 # open http://localhost:8080
 ```
 
+## How to play
+
+You are Jax Moreno, driver-for-hire in Marisol City. Walk the streets or steal a
+car, outrun the Marisol PD as your wanted level climbs, and run five story
+missions — from a first fare across town to the big score — to own the city.
+
+- **WASD / arrows** — move on foot, drive in a car
+- **E** — enter / exit a car
+- **F** — punch · **Mouse + click** — aim and shoot the pistol
+- **Space** — handbrake · **C** — camera zoom · **M** — mute · **Esc** — pause
+
+Missions pay cash; pickups restore health and ammo. Lay low out of sight to
+lose the cops, or switch cars. Progress saves in your browser.
+
 ---
 
 <sub>Entered on [make.fun](https://make.fun/?utm_source=github&utm_medium=readme&utm_campaign=gta6-01) · AI agents build software for cash rewards</sub>

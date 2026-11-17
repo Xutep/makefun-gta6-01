@@ -1,148 +1,98 @@
-// Marisol City — wanted level and police: spawn pursuit cars scaled to the
-// wanted level, foot cops at 2+, roadblocks at 3+. Heat decays when the
-// player is unseen; switching cars or laying low cools things faster.
+// Marisol City — wanted level, police pursuit, roadblocks, busted.
+import { WORLD_W, WORLD_H, WANTED_DECAY_SECONDS } from './config.js';
+import { clamp, dist, angleTo, angleLerp } from './random.js';
+import { makeCar } from './vehicles.js';
 
-import { CFG } from './config.js';
-import { makeCar, driveCar, addHeat } from './vehicles.js';
-import { spawnCop } from './pedestrians.js';
-import { dist, angleTo, randomRoadPoint } from './world.js';
-import { hurtPlayer } from './player.js';
-
-export function wantedLevel(G) {
-  return Math.min(CFG.maxWanted, Math.floor(G.player.heat / CFG.heatPerStar));
+export function addWanted(game, stars, reason) {
+  if (game.wanted >= 5) return;
+  const before = game.wanted;
+  game.wanted = clamp(game.wanted + stars, 0, 5);
+  game.wantedTimer = WANTED_DECAY_SECONDS;
+  game.bestWanted = Math.max(game.bestWanted, game.wanted);
+  if (game.wanted > before) {
+    game.showToast(`Wanted level ${game.wanted} — ${reason}`);
+    if (game.wanted >= 2) game.audio.sfx('siren');
+  }
 }
 
-function policeTarget(G) {
-  // one pursuit car per star (up to 5), plus foot cops at 2+
-  const wanted = wantedLevel(G);
-  return { cars: wanted, cops: wanted >= 2 ? wanted - 1 : 0 };
+export function policeTargetCount(wanted) {
+  return wanted <= 0 ? 0 : wanted === 1 ? 1 : wanted === 2 ? 2 : wanted === 3 ? 3 : wanted === 4 ? 4 : 6;
 }
 
-export function updatePolice(G, dt) {
-  const p = G.player;
-  const wanted = wantedLevel(G);
-
-  // --- heat decay ---------------------------------------------------------
-  const policeNear = G.police.some((car) => dist(car.x, car.y, p.x, p.y) < 420);
-  const decay = policeNear ? CFG.heatDecay * 0.3 : (p.car ? CFG.heatDecayHidden : CFG.heatDecay);
-  if (wanted > 0 && !G.missions.heatLock) {
-    p.heat = Math.max(0, p.heat - decay * dt);
-  }
-  if (wanted > p.bestWantedThisRun) p.bestWantedThisRun = wanted;
-
-  // --- spawn / despawn ----------------------------------------------------
-  const target = policeTarget(G);
-  if (G.police.length < target.cars && G.state === 'play') {
-    spawnPoliceCar(G);
-  }
-  if (G.police.length > target.cars) {
-    // drop the furthest one
-    let worst = null;
-    let worstD = -1;
-    for (const car of G.police) {
-      const d = dist(car.x, car.y, p.x, p.y);
-      if (d > worstD) { worstD = d; worst = car; }
-    }
-    if (worst) {
-      G.police.splice(G.police.indexOf(worst), 1);
-      G.cars.splice(G.cars.indexOf(worst), 1);
-    }
-  }
-  const cops = G.peds.filter((ped) => ped.kind === 'cop').length;
-  if (cops < target.cops && G.state === 'play') {
-    const pt = randomRoadPoint(G.world, G.rng);
-    spawnCop(G, pt.x, pt.y);
-  }
-
-  // --- roadblocks at 3+ ----------------------------------------------------
-  if (wanted >= 3 && !G.roadblockActive) {
-    G.roadblockActive = true;
-    placeRoadblock(G);
-  }
-  if (wanted < 3) G.roadblockActive = false;
-
-  // --- pursuit ------------------------------------------------------------
-  // Each chaser aims at a slightly offset point so they trail in formation
-  // instead of all piling onto the same spot and stalling the player.
-  for (const car of G.police) {
-    car.ramCooldown -= dt;
-    const side = ((car.id % 3) - 1) * 46;
-    const tx = p.x + Math.cos(p.angle + Math.PI / 2) * side;
-    const ty = p.y + Math.sin(p.angle + Math.PI / 2) * side;
-    const targetAngle = angleTo(car.x, car.y, tx, ty);
-    let diff = targetAngle - car.angle;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    const steer = Math.max(-1, Math.min(1, diff * 1.6));
-    const speedBoost = 1 + wanted * 0.04;
-    const throttle = Math.abs(diff) < 1.2 ? 1 : 0.4;
-    const prevMax = car.maxSpeed;
-    car.maxSpeed = CFG.policeMax * speedBoost;
-    driveCar(G, car, throttle, steer, false, dt);
-    car.maxSpeed = prevMax;
-
-    // ramming the player's car: a nudge and a little damage, not a full stop
-    const d = dist(car.x, car.y, p.x, p.y);
-    if (d < 46 && car.ramCooldown <= 0) {
-      car.ramCooldown = 0.9;
-      G.audio.crash();
-      if (p.car) {
-        p.car.speed *= 0.82;
-        if (hurtPlayer(G, 4)) endPlayer(G, 'wasted');
-      } else if (p.onFoot) {
-        p.bustedTimer += 0.6;
+export function updatePolice(game, dt) {
+  const p = game.player;
+  const px = p.inCar ? p.inCar.x : p.x;
+  const py = p.inCar ? p.inCar.y : p.y;
+  // Decay: laying low out of sight drops the heat.
+  if (game.wanted > 0) {
+    const nearestCop = game.police.reduce((m, c) => Math.min(m, dist(c.x, c.y, px, py)), Infinity);
+    const hidden = nearestCop > 520 && !(p.inCar && Math.abs(p.inCar.speed) > 120);
+    if (hidden) {
+      game.wantedTimer -= dt;
+      if (game.wantedTimer <= 0) {
+        game.wanted -= 1;
+        game.wantedTimer = WANTED_DECAY_SECONDS;
+        game.showToast(game.wanted === 0 ? 'You lost the cops.' : `Wanted level ${game.wanted}`);
       }
+    } else {
+      game.wantedTimer = WANTED_DECAY_SECONDS;
     }
   }
-
-  // siren sound while any police car is close
-  const anyNear = G.police.some((car) => dist(car.x, car.y, p.x, p.y) < 700);
-  G.audio.siren(anyNear && wanted > 0);
-}
-
-function spawnPoliceCar(G) {
-  const p = G.player;
-  // spawn on a road point 500-800px away, off the player's screen
-  let pt = null;
-  for (let tries = 0; tries < 12; tries++) {
-    const cand = randomRoadPoint(G.world, G.rng);
-    const d = dist(cand.x, cand.y, p.x, p.y);
-    if (d > 520 && d < 900) { pt = cand; break; }
+  // Spawn pursuit cars up to the wanted count.
+  const want = policeTargetCount(game.wanted);
+  while (game.police.length < want) {
+    const edge = game.rng.int(0, 3);
+    let x = px;
+    let y = py;
+    if (edge === 0) { x = px + 620; y = py - 200; }
+    if (edge === 1) { x = px - 620; y = py + 200; }
+    if (edge === 2) { x = px + 200; y = py + 620; }
+    if (edge === 3) { x = px - 200; y = py - 620; }
+    x = clamp(x, 40, WORLD_W - 40);
+    y = clamp(y, 40, WORLD_H - 40);
+    const car = makeCar(x, y, angleTo(x, y, px, py), '#1e4fa3', 'police', false);
+    car.driver = 'police';
+    car.speed = 200;
+    car.maxSpeed = 380 + game.wanted * 32;
+    car.siren = 0;
+    game.police.push(car);
+    game.cars.push(car);
   }
-  if (!pt) pt = randomRoadPoint(G.world, G.rng);
-  const car = makeCar(pt.x, pt.y, angleTo(pt.x, pt.y, p.x, p.y), 'police', '#f2f2f2', { ai: 'police' });
-  car.speed = 200;
-  G.police.push(car);
-  G.cars.push(car);
-}
-
-function placeRoadblock(G) {
-  const p = G.player;
-  // two police cars parked across the road ahead of the player
-  const ahead = p.car ? p.car.angle : p.angle;
-  const bx = p.x + Math.cos(ahead) * 320;
-  const by = p.y + Math.sin(ahead) * 320;
-  const perp = ahead + Math.PI / 2;
-  for (const off of [-34, 34]) {
-    const car = makeCar(
-      bx + Math.cos(perp) * off,
-      by + Math.sin(perp) * off,
-      ahead + Math.PI / 2,
-      'police', '#f2f2f2',
-      { ai: 'police', parked: true },
-    );
-    car.speed = 0;
-    G.police.push(car);
-    G.cars.push(car);
+  while (game.police.length > want) {
+    const car = game.police.pop();
+    const i = game.cars.indexOf(car);
+    if (i >= 0) game.cars.splice(i, 1);
   }
-  G.toast = 'ROADBLOCK AHEAD!';
-  G.toastT = 3;
+  // Pursuit steering: chase the player, ram on foot, match speed in a car.
+  for (const car of game.police) {
+    const target = angleTo(car.x, car.y, px, py);
+    car.angle = angleLerp(car.angle, target, clamp(2.4 * dt, 0, 1));
+    const wantSpeed = p.inCar ? Math.min(car.maxSpeed, Math.abs(p.inCar.speed) + 60) : 260;
+    car.speed += clamp(wantSpeed - car.speed, -500 * dt, 320 * dt);
+    car.x = clamp(car.x + Math.cos(car.angle) * car.speed * dt, 30, WORLD_W - 30);
+    car.y = clamp(car.y + Math.sin(car.angle) * car.speed * dt, 30, WORLD_H - 30);
+    car.siren += dt;
+    if (car.siren > 1.6) { car.siren = 0; game.audio.sfx('siren'); }
+    // Busted: a police car catches the player on foot, or rams the car hard.
+    if (!p.inCar && dist(car.x, car.y, p.x, p.y) < 30) {
+      game.busted();
+    }
+    if (p.inCar && dist(car.x, car.y, p.inCar.x, p.inCar.y) < 34 && Math.abs(car.speed) > 200) {
+      p.inCar.speed *= 0.55;
+      car.speed *= 0.5;
+      game.audio.sfx('crash');
+      game.damagePlayer(8, 'rammed by police');
+    }
+  }
+  // Roadblocks at wanted 3+: striped barriers ahead on the player's road.
+  game.roadblocks = game.wanted >= 3 ? [{ x: px + 420, y: py, angle: 0 }] : [];
 }
 
-export function endPlayer(G, how) {
-  if (G.state !== 'play') return;
-  G.state = how; // 'busted' | 'wasted'
-  G.audio.busted();
-  G.audio.siren(false);
-  G.audio.engine(0, false);
+export function clearPolice(game) {
+  for (const car of game.police) {
+    const i = game.cars.indexOf(car);
+    if (i >= 0) game.cars.splice(i, 1);
+  }
+  game.police = [];
+  game.roadblocks = [];
 }

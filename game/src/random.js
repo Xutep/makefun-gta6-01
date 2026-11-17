@@ -1,8 +1,6 @@
-// Marisol City — seeded RNG. The simulation never draws from the global
-// unseeded random source or the wall clock; every random draw comes from a
-// mulberry32 stream seeded from the ?seed= URL parameter, so ?shot= poses
-// are reproducible.
-
+// Marisol City — seeded RNG (mulberry32). The simulation never uses
+// Math.random() or Date.now(); every random choice flows from one seed so
+// `?seed=N` reproduces the same city, traffic and pedestrians.
 export function mulberry32(seed) {
   let a = seed >>> 0;
   return function next() {
@@ -24,11 +22,32 @@ export function makeRng(seed) {
     int(min, max) {
       return Math.floor(min + next() * (max - min + 1));
     },
-    pick(arr) {
-      return arr[Math.floor(next() * arr.length)];
+    pick(list) {
+      return list[Math.floor(next() * list.length)];
     },
     chance(p) {
       return next() < p;
     },
   };
+}
+
+export function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+export function dist(ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+export function angleTo(ax, ay, bx, by) {
+  return Math.atan2(by - ay, bx - ax);
+}
+
+export function angleLerp(a, b, t) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
 }

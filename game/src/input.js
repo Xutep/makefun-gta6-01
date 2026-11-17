@@ -1,59 +1,57 @@
-// Marisol City — keyboard + mouse input. Tracks held keys and the mouse
-// position in screen space, plus edge-triggered "just pressed" keys.
-
-export function createInput() {
+// Marisol City — keyboard + mouse input. Keys are polled by the game loop;
+// mouse position is converted to world coordinates by the renderer.
+export function createInput(canvas) {
+  const keys = new Set();
+  const pressed = new Set();
   const input = {
-    keys: new Set(),
-    pressed: new Set(), // keys pressed since last consume
-    mouse: { x: 0, y: 0, down: false, clicked: false, worldX: 0, worldY: 0 },
+    keys,
+    mouseX: 0,
+    mouseY: 0,
+    mouseDown: false,
+    clicked: false,
     anyKey: false,
+    down(code) {
+      return keys.has(code);
+    },
+    // Edge-triggered: true once per physical key press, even a tap shorter
+    // than one simulation step. Consuming it removes it from the queue.
+    wasPressed(code) {
+      if (pressed.has(code)) {
+        pressed.delete(code);
+        return true;
+      }
+      return false;
+    },
+    axis() {
+      let x = 0;
+      let y = 0;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+      if (keys.has('KeyW') || keys.has('ArrowUp')) y -= 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) y += 1;
+      return { x, y };
+    },
   };
 
-  const keyName = (e) => e.key.length === 1 ? e.key.toLowerCase() : e.key;
-
   window.addEventListener('keydown', (e) => {
-    const k = keyName(e);
-    if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
-    if (!e.repeat) {
-      input.keys.add(k);
-      input.pressed.add(k);
-    }
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+    keys.add(e.code);
+    pressed.add(e.code);
     input.anyKey = true;
   });
-  window.addEventListener('keyup', (e) => {
-    input.keys.delete(keyName(e));
-  });
-  window.addEventListener('blur', () => {
-    input.keys.clear();
-  });
-
-  return input;
-}
-
-export function attachMouse(input, canvas) {
+  window.addEventListener('keyup', (e) => keys.delete(e.code));
+  window.addEventListener('blur', () => keys.clear());
   canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    input.mouse.x = e.clientX - rect.left;
-    input.mouse.y = e.clientY - rect.top;
+    const r = canvas.getBoundingClientRect();
+    input.mouseX = e.clientX - r.left;
+    input.mouseY = e.clientY - r.top;
   });
   canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
-      input.mouse.down = true;
-      input.mouse.clicked = true;
+      input.mouseDown = true;
+      input.clicked = true;
     }
   });
-  window.addEventListener('mouseup', () => {
-    input.mouse.down = false;
-  });
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-}
-
-export function wasPressed(input, ...names) {
-  for (const n of names) if (input.pressed.has(n)) return true;
-  return false;
-}
-
-export function endFrame(input) {
-  input.pressed.clear();
-  input.mouse.clicked = false;
+  window.addEventListener('mouseup', () => { input.mouseDown = false; });
+  return input;
 }

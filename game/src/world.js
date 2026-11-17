@@ -1,209 +1,116 @@
-// Marisol City — city generation: road grid, districts (downtown, park,
-// harbour, beach), buildings, trees, spawns. Fully seeded: the same seed
-// always builds the same city.
-
-import { CFG, COLORS } from './config.js';
+// Marisol City — city generation: roads, blocks, buildings, beach, park,
+// harbour, palms, spawn points. Everything derives from the seeded RNG.
+import { WORLD_W, WORLD_H, ROAD_W, AVENUES, STREETS, COLORS } from './config.js';
 
 export function generateWorld(rng) {
-  const W = CFG.worldW;
-  const H = CFG.worldH;
-  const avenues = [];
-  const streets = [];
-  for (let x = 200; x <= W - 200; x += 400) avenues.push(x);
-  for (let y = 200; y <= H - 200; y += 300) streets.push(y);
-
   const buildings = [];
-  const trees = [];
-  const parks = [];
-  const containers = [];
+  const palms = [];
+  const lamps = [];
 
-  // Block (i, j) spans avenues[i]..avenues[i+1] x streets[j]..streets[j+1].
-  const block = (i, j) => ({
-    x0: avenues[i] + CFG.roadW / 2 + 14,
-    x1: avenues[i + 1] - CFG.roadW / 2 - 14,
-    y0: streets[j] + CFG.roadW / 2 + 14,
-    y1: streets[j + 1] - CFG.roadW / 2 - 14,
-  });
-
-  const isDowntown = (i, j) => i >= 2 && i <= 4 && j >= 1 && j <= 3;
-  const isHarbour = (i, j) => i >= 5 && j >= 5;
-  const isPark = (i, j) => i === 1 && j === 3;
-  const isBeachBlock = (i, j) => streets[j + 1] > 2050;
-
-  for (let i = 0; i < avenues.length - 1; i++) {
-    for (let j = 0; j < streets.length - 1; j++) {
-      const b = block(i, j);
-      if (isPark(i, j)) {
-        parks.push({ x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 });
-        for (let t = 0; t < 14; t++) {
-          trees.push({
-            x: rng.range(b.x0 + 20, b.x1 - 20),
-            y: rng.range(b.y0 + 20, b.y1 - 20),
-            r: rng.range(10, 16),
-            palm: false,
-          });
+  // Blocks are the rectangles between avenues and streets.
+  for (let ai = 0; ai < AVENUES.length - 1; ai++) {
+    for (let si = 0; si < STREETS.length - 1; si++) {
+      const x0 = AVENUES[ai] + ROAD_W / 2 + 14;
+      const x1 = AVENUES[ai + 1] - ROAD_W / 2 - 14;
+      const y0 = STREETS[si] + ROAD_W / 2 + 14;
+      const y1 = STREETS[si + 1] - ROAD_W / 2 - 14;
+      const w = x1 - x0;
+      const h = y1 - y0;
+      // The park block: avenues 1420..1920, streets 820..1280.
+      if (ai === 2 && si === 1) {
+        for (let p = 0; p < 26; p++) {
+          palms.push({ x: rng.range(x0 + 20, x1 - 20), y: rng.range(y0 + 20, y1 - 20), park: true });
         }
         continue;
       }
-      if (isBeachBlock(i, j)) continue; // sand, no buildings
-      if (isHarbour(i, j)) {
-        // warehouses + shipping containers
-        const n = rng.int(1, 2);
-        for (let k = 0; k < n; k++) {
-          const w = rng.range(110, 190);
-          const h = rng.range(70, 110);
-          buildings.push({
-            x: rng.range(b.x0, b.x1 - w),
-            y: rng.range(b.y0, b.y1 - h),
-            w, h,
-            hgt: rng.range(14, 26),
-            color: rng.pick(COLORS.warehouse),
-            downtown: false,
-          });
-        }
-        for (let c = 0; c < 6; c++) {
-          containers.push({
-            x: rng.range(b.x0, b.x1 - 46),
-            y: rng.range(b.y0, b.y1 - 20),
-            w: 46, h: 20,
-            color: rng.pick(['#c23b2e', '#2e6dc2', '#e8b73a', '#3aa655']),
-          });
-        }
-        continue;
-      }
-      if (isDowntown(i, j)) {
-        // one or two glass towers per downtown block
-        const n = rng.chance(0.6) ? 2 : 1;
-        for (let k = 0; k < n; k++) {
-          const w = rng.range(90, 150);
-          const h = rng.range(90, 150);
-          buildings.push({
-            x: b.x0 + (k === 0 ? 10 : b.x1 - b.x0 - w - 10),
-            y: rng.range(b.y0 + 8, b.y1 - h - 8),
-            w, h,
-            hgt: rng.range(60, 130),
-            color: rng.pick(COLORS.downtownGlass),
-            downtown: true,
-          });
-        }
-        continue;
-      }
-      // residential / commercial: 2-4 smaller buildings
-      const n = rng.int(2, 4);
-      for (let k = 0; k < n; k++) {
-        const w = rng.range(56, 110);
-        const h = rng.range(56, 100);
+      // Harbour block: south-west corner block.
+      if (ai === 0 && si === 3) {
         buildings.push({
-          x: rng.range(b.x0, b.x1 - w),
-          y: rng.range(b.y0, b.y1 - h),
-          w, h,
-          hgt: rng.range(10, 30),
+          x: x0 + w * 0.1, y: y0 + h * 0.15, w: w * 0.8, h: h * 0.3,
+          color: '#7a6a55', height: 1, label: 'HARBOUR',
+        });
+        buildings.push({
+          x: x0 + w * 0.1, y: y0 + h * 0.6, w: w * 0.35, h: h * 0.28,
+          color: '#5d7a8c', height: 1, label: 'DOCKS',
+        });
+        continue;
+      }
+      const downtown = ai >= 2 && ai <= 3 && si >= 1 && si <= 2;
+      const count = downtown ? rng.int(2, 4) : rng.int(1, 3);
+      for (let b = 0; b < count; b++) {
+        const bw = rng.range(w * 0.22, w * 0.42);
+        const bh = rng.range(h * 0.22, h * 0.45);
+        const bx = rng.range(x0, x1 - bw);
+        const by = rng.range(y0, y1 - bh);
+        buildings.push({
+          x: bx, y: by, w: bw, h: bh,
           color: rng.pick(COLORS.buildingRoof),
-          downtown: false,
+          height: downtown ? rng.int(2, 4) : rng.int(1, 2),
+          label: '',
         });
       }
+      // Palms along the block edges.
+      for (let p = 0; p < 3; p++) {
+        palms.push({ x: rng.range(x0, x1), y: y0 + rng.range(0, 10), park: false });
+        palms.push({ x: rng.range(x0, x1), y: y1 - rng.range(0, 10), park: false });
+      }
     }
   }
 
-  // Palm trees along the beach front and a few along the avenues.
-  for (let x = 120; x < W - 100; x += 130) {
-    trees.push({ x: x + rng.range(-20, 20), y: 2120 + rng.range(-8, 8), r: rng.range(11, 15), palm: true });
+  // Beach palms along the east strip.
+  for (let i = 0; i < 22; i++) {
+    palms.push({ x: rng.range(3010, 3140), y: rng.range(60, WORLD_H - 60), park: false });
   }
-  for (const ax of avenues) {
-    for (let t = 0; t < 4; t++) {
-      trees.push({
-        x: ax + CFG.roadW / 2 + 12,
-        y: rng.range(260, H - 260),
-        r: rng.range(9, 13),
-        palm: rng.chance(0.4),
-      });
+  // Street lamps at intersections.
+  for (const ax of AVENUES) {
+    for (const sy of STREETS) {
+      lamps.push({ x: ax - ROAD_W / 2 - 6, y: sy - ROAD_W / 2 - 6 });
     }
   }
-
-  // Fixed mission / gameplay landmarks on road intersections.
-  const at = (ax, sy) => ({ x: avenues[ax], y: streets[sy] });
-  const landmarks = {
-    playerSpawn: { x: 600, y: 500 },
-    hideout: { x: 600, y: 500 },
-    clientSpot: at(2, 1), // (1000, 500)
-    clientDest: at(6, 4), // (2600, 1400)
-    sportsCarSpot: { x: 1800, y: 836 },
-    garage: { x: 600, y: 1964 },
-    packages: [at(1, 5), at(5, 1), at(6, 6)],
-    pierDrop: { x: 3000, y: 200 },
-    bigScoreStops: [at(0, 6), at(6, 0), at(3, 3)],
-    policeStation: at(3, 2),
-  };
 
   return {
-    w: W, h: H, avenues, streets,
-    buildings, trees, parks, containers,
-    landmarks,
-    beachY: 2080,
-    waterY: 2240,
+    buildings,
+    palms,
+    lamps,
+    beachX: 3000,
+    waterX: 3160,
+    park: { x: AVENUES[2] + ROAD_W / 2, y: STREETS[1] + ROAD_W / 2, w: AVENUES[3] - AVENUES[2] - ROAD_W, h: STREETS[2] - STREETS[1] - ROAD_W },
+    harbour: { x: 0, y: STREETS[3] + ROAD_W / 2, w: AVENUES[1] - ROAD_W / 2, h: WORLD_H - STREETS[3] - ROAD_W / 2 },
+    spawns: {
+      player: { x: AVENUES[1], y: STREETS[1] + 160 },
+      garage: { x: AVENUES[4], y: STREETS[0] - 40 },
+      hideout: { x: AVENUES[0] - 60, y: STREETS[3] + 120 },
+      sportsCar: { x: AVENUES[3] + 30, y: STREETS[2] - 30 },
+      client: { x: AVENUES[0] + 40, y: STREETS[0] + 40 },
+      downtown: { x: AVENUES[2] + 60, y: STREETS[2] + 60 },
+      beach: { x: 3060, y: 1500 },
+    },
   };
 }
 
-// --- Queries ---------------------------------------------------------------
-
-export function isOnRoad(world, x, y) {
-  const half = CFG.roadW / 2;
-  for (const ax of world.avenues) if (Math.abs(x - ax) <= half) return true;
-  for (const sy of world.streets) if (Math.abs(y - sy) <= half) return true;
+export function isOnRoad(x, y) {
+  for (const ax of AVENUES) if (Math.abs(x - ax) < ROAD_W / 2 + 4) return true;
+  for (const sy of STREETS) if (Math.abs(y - sy) < ROAD_W / 2 + 4) return true;
   return false;
 }
 
-export function onAvenue(world, x) {
-  const half = CFG.roadW / 2;
-  for (const ax of world.avenues) if (Math.abs(x - ax) <= half) return ax;
-  return null;
+export function nearestRoadPoint(x, y) {
+  let best = null;
+  let bestD = Infinity;
+  for (const ax of AVENUES) {
+    const d = Math.abs(x - ax);
+    if (d < bestD) { bestD = d; best = { x: ax, y, vertical: true }; }
+  }
+  for (const sy of STREETS) {
+    const d = Math.abs(y - sy);
+    if (d < bestD) { bestD = d; best = { x, y: sy, vertical: false }; }
+  }
+  return best;
 }
 
-export function onStreet(world, y) {
-  const half = CFG.roadW / 2;
-  for (const sy of world.streets) if (Math.abs(y - sy) <= half) return sy;
-  return null;
-}
-
-// Nearest road line, for traffic cars that got shoved off the road.
-export function nearestAvenue(world, x) {
-  return world.avenues.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a));
-}
-
-export function nearestStreet(world, y) {
-  return world.streets.reduce((a, b) => (Math.abs(b - y) < Math.abs(a - y) ? b : a));
-}
-
-export function hitBuilding(world, x, y, r) {
+export function pointInBuilding(world, x, y, pad = 0) {
   for (const b of world.buildings) {
-    if (x + r > b.x && x - r < b.x + b.w && y + r > b.y && y - r < b.y + b.h) return b;
+    if (x > b.x - pad && x < b.x + b.w + pad && y > b.y - pad && y < b.y + b.h + pad) return b;
   }
   return null;
-}
-
-export function clampToWorld(x, y, m = 30) {
-  return {
-    x: Math.max(m, Math.min(CFG.worldW - m, x)),
-    y: Math.max(m, Math.min(CFG.worldH - m, y)),
-  };
-}
-
-// A random point on a road (lane offset), for spawns.
-export function randomRoadPoint(world, rng) {
-  if (rng.chance(0.5)) {
-    const ax = rng.pick(world.avenues);
-    const lane = rng.chance(0.5) ? -16 : 16;
-    return { x: ax + lane, y: rng.range(240, CFG.worldH - 240), vertical: true };
-  }
-  const sy = rng.pick(world.streets);
-  const lane = rng.chance(0.5) ? -16 : 16;
-  return { x: rng.range(240, CFG.worldW - 240), y: sy + lane, vertical: false };
-}
-
-export function dist(ax, ay, bx, by) {
-  return Math.hypot(bx - ax, by - ay);
-}
-
-export function angleTo(ax, ay, bx, by) {
-  return Math.atan2(by - ay, bx - ax);
 }

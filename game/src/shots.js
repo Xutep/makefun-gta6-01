@@ -1,102 +1,113 @@
-// Marisol City — deterministic ?shot= poses for the screenshots. Each pose
-// sets a fixed player / car / police / mission state from the seeded world,
-// so the same URL always renders the same scene (modulo a few seconds of
-// live simulation after the pose settles).
-
+// Marisol City — deterministic `?shot=` poses for screenshots.
+// Each pose fixes the player, cars, police and mission state so the four
+// screenshots are reproducible with `?shot=<name>&seed=1`.
 import { makeCar } from './vehicles.js';
-import { startMission } from './missions.js';
-import { wantedLevel } from './police.js';
+import { AVENUES, STREETS } from './config.js';
 
-export function applyShot(G, name) {
-  const L = G.world.landmarks;
-  const p = G.player;
-  G.shot = name;
-  G.state = 'play';
-  G.missions.dialog = null;
-  G.missions.dialogQueue = [];
+function clearPolice(game) {
+  game.police = [];
+  game.cars = game.cars.filter((c) => c.driver !== 'police');
+}
 
+function addPoliceBehind(game, px, py, angle, count, wanted) {
+  for (let i = 0; i < count; i++) {
+    const bx = px - Math.cos(angle) * (90 + i * 70) + (i % 2 === 0 ? 26 : -26);
+    const by = py - Math.sin(angle) * (90 + i * 70) + (i % 2 === 0 ? 10 : -10);
+    const car = makeCar(bx, by, angle, '#1e4fa3', 'police', false);
+    car.driver = 'police';
+    car.speed = 300;
+    car.maxSpeed = 460;
+    car.siren = i * 0.4;
+    game.police.push(car);
+    game.cars.push(car);
+  }
+  game.wanted = wanted;
+  game.bestWanted = Math.max(game.bestWanted, wanted);
+}
+
+export function applyShot(game, name) {
+  const p = game.player;
+  const s = game.world.spawns;
+  clearPolice(game);
+  game.screen = 'playing';
+  game.frozen = true;
+  game.dialog = null;
   if (name === 'cover') {
-    // player driving the red sports car mid-chase, 3 stars, police behind
-    startMission(G, 1);
-    G.missions.dialog = null;
-    G.missions.dialogQueue = [];
-    const car = G.missionCar;
-    car.x = 1400; car.y = 800; car.angle = 0; car.speed = 380; car.parked = false;
-    p.car = car; p.onFoot = false; p.x = car.x; p.y = car.y; p.angle = 0;
-    car.driven = true; car.ai = null;
-    p.heat = 60; // 3 stars
-    G.roadblockActive = true; // no roadblock in the pose — the chase is the shot
-    G.missions.objective = 'Bring it to Rico\'s garage';
-    G.missions.waypoint = { x: L.garage.x, y: L.garage.y, label: 'Garage' };
-    spawnChasers(G, 2, 1400, 800, 260);
-    G.camera.zoom = 0.9;
-    G.camera.targetZoom = 0.9;
+    // Driving a sports car mid-chase, wanted 3, police behind, mission live.
+    const car = makeCar(AVENUES[2], STREETS[2] - 10, 0, '#d23b3b', 'sports', false);
+    car.driver = 'player';
+    car.speed = 320;
+    game.cars.push(car);
+    p.inCar = car;
+    p.x = car.x;
+    p.y = car.y;
+    addPoliceBehind(game, car.x, car.y, 0, 2, 3);
+    game.mission.index = 1;
+    game.mission.stage = 'active';
+    game.mission.timer = 96;
+    game.mission.waypoint = { x: game.world.spawns.garage.x, y: game.world.spawns.garage.y, label: 'Deliver to the garage' };
+    game.cash = 2400;
+    game.showToast('Mission: Hot Wheels — deliver the Comet GT');
   } else if (name === 'foot') {
-    // on foot downtown, pedestrians + traffic around, waypoint + mission text
-    startMission(G, 0);
-    G.missions.dialog = null;
-    G.missions.dialogQueue = [];
-    p.x = 1400; p.y = 500; p.angle = Math.PI / 2; p.onFoot = true; p.car = null;
-    p.heat = 0;
-    G.missions.objective = 'Pick up the client downtown (get in a car)';
-    G.missions.waypoint = { x: L.clientSpot.x, y: L.clientSpot.y, label: 'Client' };
-    G.camera.zoom = 1.1;
-    G.camera.targetZoom = 1.1;
+    // On foot downtown, pedestrians + traffic around, waypoint visible.
+    p.inCar = null;
+    p.x = AVENUES[2] + 40;
+    p.y = STREETS[2] + 30;
+    p.angle = -Math.PI / 2;
+    p.ammo = 18;
+    game.mission.index = 2;
+    game.mission.stage = 'active';
+    game.mission.timer = 150;
+    game.mission.waypoint = { x: 2500, y: 1900, label: 'Package 2 of 3' };
+    game.mission.stops = [
+      { x: 700, y: 500, done: true },
+      { x: 2500, y: 1900, done: false },
+      { x: 2800, y: 600, done: false },
+    ];
+    game.mission.collected = 1;
+    game.cash = 1300;
+    game.wanted = 1;
   } else if (name === 'chase') {
-    // police pursuit near the beach at dusk, 4 stars
-    startMission(G, 3);
-    G.missions.dialog = null;
-    G.missions.dialogQueue = [];
-    G.dusk = true;
-    // eastbound on the beachfront street (y=2000) so sand + water show below
-    const car = G.cars.find((c) => c.kind === 'sedan' && !c.driven && !c.parked) || G.cars[0];
-    car.x = 1400; car.y = 2000; car.angle = 0; car.speed = 400; car.parked = false;
-    p.car = car; p.onFoot = false; p.x = car.x; p.y = car.y; p.angle = 0;
-    car.driven = true; car.ai = null;
-    p.heat = 80; // 4 stars
-    G.roadblockActive = true; // no roadblock in the pose — the chase is the shot
-    G.missions.objective = 'Survive the chase — 60s';
-    G.missions.waypoint = { x: L.pierDrop.x, y: L.pierDrop.y, label: 'Pier' };
-    spawnChasers(G, 3, 1400, 2000, 260);
-    G.camera.zoom = 0.95;
-    G.camera.targetZoom = 0.95;
+    // Police pursuit near the beach at dusk, wanted 4. The player car sits
+    // just west of the sand so it stays inside the frame, not at its edge.
+    game.dusk = true;
+    const car = makeCar(2920, 1500, -Math.PI / 2, '#2f6fd0', 'sedan', false);
+    car.driver = 'player';
+    car.speed = 380;
+    game.cars.push(car);
+    p.inCar = car;
+    p.x = car.x;
+    p.y = car.y;
+    addPoliceBehind(game, car.x, car.y, -Math.PI / 2, 3, 4);
+    game.mission.index = 3;
+    game.mission.stage = 'active';
+    game.mission.timer = 88;
+    game.mission.waypoint = { x: s.hideout.x, y: s.hideout.y, label: 'Lose the heat, reach the hideout' };
+    game.cash = 3100;
+    game.showToast('Wanted level 4 — lose the cops!');
   } else if (name === 'mission') {
-    // mission dialog box + objective marker + car at a pickup point
-    startMission(G, 2);
-    // parked just north of the first package so the marker is on-screen below
-    const car = G.cars.find((c) => c.kind === 'sedan' && !c.driven && !c.parked) || G.cars[0];
-    car.x = 600; car.y = 1500; car.angle = Math.PI / 2; car.speed = 0; car.parked = false;
-    p.car = car; p.onFoot = false; p.x = car.x; p.y = car.y; p.angle = Math.PI / 2;
-    car.driven = true; car.ai = null;
-    p.heat = 20; // 1 star
-    G.missions.objective = 'Collect package 1 of 3 (stay under 3 stars)';
-    G.missions.waypoint = { x: L.packages[0].x, y: L.packages[0].y, label: 'Package' };
-    G.missions.dialog = {
-      speaker: 'Mara',
-      text: 'Three packages, three corners of the city. Cops are jumpy today. Keep it quiet.',
-    };
-    G.missions.dialogT = 999;
-    G.camera.zoom = 1.05;
-    G.camera.targetZoom = 1.05;
+    // Mission dialog + objective marker + car at a pickup point.
+    p.inCar = null;
+    p.x = 700;
+    p.y = 560;
+    p.angle = Math.PI / 4;
+    p.ammo = 24;
+    const car = makeCar(730, 500, Math.PI / 2, '#e8b93b', 'sedan', false);
+    car.driver = 'player';
+    game.cars.push(car);
+    game.mission.index = 2;
+    game.mission.stage = 'active';
+    game.mission.timer = 172;
+    game.mission.stops = [
+      { x: 700, y: 500, done: false },
+      { x: 2500, y: 1900, done: false },
+      { x: 2800, y: 600, done: false },
+    ];
+    game.mission.waypoint = { x: 700, y: 500, label: 'Package 1 of 3' };
+    game.showDialog('Rosa: Three packages, three corners of the city. Stay cool — the cops are watching.');
+    game.cash = 1300;
+    game.wanted = 0;
   }
-  // snap the camera onto the player so the pose is framed at once
-  G.camera.x = p.x;
-  G.camera.y = p.y;
-}
-
-function spawnChasers(G, n, px, py, gap) {
-  for (let i = 0; i < n; i++) {
-    const car = makeCar(px - (i + 1) * gap, py + (i % 2 === 0 ? 34 : -34), 0, 'police', '#f2f2f2', { ai: 'police' });
-    car.speed = 320; // trailing the player, not ramming it at once
-    G.police.push(car);
-    G.cars.push(car);
-  }
-}
-
-// keep the wanted level visible in the shot even if heat decays
-export function holdShotWanted(G) {
-  if (!G.shot) return;
-  const want = G.shot === 'cover' ? 60 : G.shot === 'chase' ? 80 : G.shot === 'mission' ? 20 : 0;
-  if (want > 0) G.player.heat = Math.max(G.player.heat, want);
-  if (G.shot === 'mission' && G.missions.dialog) G.missions.dialogT = 999;
+  game.camera.x = (p.inCar ? p.inCar.x : p.x) - game.viewW / 2;
+  game.camera.y = (p.inCar ? p.inCar.y : p.y) - game.viewH / 2;
 }
